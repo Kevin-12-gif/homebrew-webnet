@@ -6,7 +6,7 @@ class Webnet < Formula
   url "https://github.com/Kevin-12-gif/homebrew-webnet/archive/refs/heads/main.tar.gz"
   sha256 "659bff5e30ec4458641aef6e910d5c9d4da3edb71c02849de642aa7b8edb2f08"
   license "MIT"
-  version "1.0.1"
+  version "1.0.2"
 
   depends_on "node"
 

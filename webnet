@@ -111,6 +111,11 @@ let finalUrl = input;
 if (isSearch) {
     finalUrl = `https://www.google.com/search?q=${encodeURIComponent(input)}`;
 } else {
+    // Automatically add .com if no extension is provided (e.g., "reddit" -> "reddit.com")
+    if (!finalUrl.includes('.')) {
+        finalUrl += '.com';
+    }
+
     // Add protocol if missing
     if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
         finalUrl = 'https://' + finalUrl;

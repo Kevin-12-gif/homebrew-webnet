@@ -1,6 +1,6 @@
 {
   "name": "webnet",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A standalone WebView window for WebNet",
   "type": "module",
   "bin": {
