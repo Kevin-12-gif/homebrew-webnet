@@ -3,8 +3,8 @@ require "language/node"
 class Webnet < Formula
   desc "Standalone Incognito Web Browser with Chrome identity"
   homepage "https://github.com/Kevin-12-gif/homebrew-webnet"
-  url "https://github.com/Kevin-12-gif/homebrew-webnet/archive/refs/heads/main.tar.gz"
-  sha256 "7ab2b2ee6e3c07035916611792525af975af27b4a880ab9b4354e8014e64e83b"
+  url "https://github.com/Kevin-12-gif/homebrew-webnet/archive/refs/tags/v1.0.2.tar.gz"
+  sha256 "b1bd959fd059686a9661e8f9dabde3a288f9581e784f564476576a3e603c6551"
   license "MIT"
   version "1.0.2"
 
