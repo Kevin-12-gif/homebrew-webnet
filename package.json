@@ -2,13 +2,9 @@
   "name": "webnet",
   "version": "1.0.0",
   "description": "A standalone WebView window for WebNet",
-  "main": "index.js",
   "type": "module",
   "bin": {
     "webnet": "./webnet"
-  },
-  "scripts": {
-    "start": "node index.js"
   },
   "dependencies": {
     "@webviewjs/webview": "latest"
