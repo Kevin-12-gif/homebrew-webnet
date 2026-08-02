@@ -1,0 +1,417 @@
+#!/usr/bin/env node
+import { Application } from '@webviewjs/webview';
+import os from 'os';
+import readline from 'readline';
+import { execSync, exec } from 'child_process';
+import { URL } from 'url';
+
+// Function to get the URL
+async function getUrl(isSearchMode) {
+    const args = process.argv.slice(2).filter(arg => arg !== '--search');
+    let input = args.join(' ');
+
+    // Get Display Name (Full Name) instead of technical username
+    let displayName = os.userInfo().username;
+    try {
+        if (process.platform === 'darwin') {
+            // macOS
+            displayName = execSync(`id -P $(whoami) | awk -F: '{print $8}'`, { encoding: 'utf8' }).trim();
+        } else if (process.platform === 'linux') {
+            // Linux
+            displayName = execSync(`getent passwd $(whoami) | cut -d: -f5 | cut -d, -f1`, { encoding: 'utf8' }).trim();
+        }
+    } catch (e) {
+        // Fallback to username if detection fails
+    }
+
+    if (!displayName) displayName = os.userInfo().username;
+    const firstName = displayName.split(' ')[0];
+
+    if (input) return { input, isSearch: isSearchMode, firstName };
+
+    // Typing animation helpers
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const typeWriter = async (text, delay = 40) => {
+        for (const char of text) {
+            process.stdout.write(char);
+            await sleep(delay);
+        }
+    };
+
+    await typeWriter(`Hi, ${displayName}!`);
+    console.log(); // New line
+    await sleep(1500); // 1.5 second sleep
+
+    // Set cursor to blinking underline
+    process.stdout.write('\x1b[3 q');
+
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    const promptText = isSearchMode ? 'Search on Google to continue: ' : 'Type in a url to continue: ';
+
+    // Typewriter effect integrated with readline prompt
+    for (let i = 1; i <= promptText.length; i++) {
+        rl.setPrompt(promptText.substring(0, i));
+        rl.prompt();
+        await sleep(40);
+        // Clear the line for the next prompt iteration so it doesn't duplicate
+        process.stdout.write('\r');
+    }
+
+    // Final prompt set to full text to prevent backspacing over it
+    rl.setPrompt(promptText);
+    rl.prompt();
+
+    return new Promise((resolve) => {
+        rl.on('line', (answer) => {
+            // Reset cursor to default block
+            process.stdout.write('\x1b[0 q');
+            rl.close();
+            resolve({ input: answer.trim(), isSearch: isSearchMode, firstName });
+        });
+    });
+}
+
+const isHelpFlag = process.argv.includes('--help');
+
+if (isHelpFlag) {
+    console.log(`
+WebNet - Standalone Incognito Web Browser
+
+Usage:
+  webnet                 Open interactive URL prompt
+  webnet <url>           Open specified URL immediately
+  webnet --search        Open interactive Google search prompt
+  webnet <query> --search Search Google for query immediately
+  webnet --help          Show this help message
+
+Features:
+  - Incognito Mode (No history/cookies saved)
+  - Camera & Microphone access enabled
+  - Chrome User Agent emulation
+  - Standalone Window with Cmd+W support
+    `);
+    process.exit(0);
+}
+
+console.log('\x1b[2mTip: If you don\'t know how WebNet works, run "webnet --help" for more info\x1b[0m');
+
+const isSearchFlag = process.argv.includes('--search');
+const { input, isSearch, firstName } = await getUrl(isSearchFlag);
+
+if (!input) {
+    console.log('No input provided. Exiting.');
+    process.exit(0);
+}
+
+let finalUrl = input;
+if (isSearch) {
+    finalUrl = `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+} else {
+    // Add protocol if missing
+    if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+        finalUrl = 'https://' + finalUrl;
+    }
+}
+
+const app = new Application();
+
+app.whenReady().then(() => {
+    // 1. Set up standard Application Menu for macOS (Cmd+W support)
+    app.setMenu({
+        items: [
+            {
+                label: 'WebNet',
+                submenu: {
+                    items: [
+                        { label: 'Quit', accelerator: 'CmdOrCtrl+Q', role: 'quit' }
+                    ]
+                }
+            },
+            {
+                label: 'Window',
+                submenu: {
+                    items: [
+                        { label: 'Close', accelerator: 'CmdOrCtrl+W', role: 'close' }
+                    ]
+                }
+            }
+        ]
+    });
+
+    // 2. Create the main window
+    const window = app.createBrowserWindow({
+        title: 'WebNet',
+        width: 1280,
+        height: 800,
+    });
+
+    // Check for specific services
+    const isHangouts = finalUrl.includes('hangouts.google.com');
+    const isSkype = finalUrl.includes('skype.com');
+
+    // Loading Spinner HTML
+    const cleanUrl = finalUrl.replace(/^https?:\/\//, '');
+    const statusText = isSearch ? `Searching for ${input}...` : `Connecting to ${cleanUrl}...`;
+    const loadingHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {
+                margin: 0;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                background-color: #ffffff;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            }
+            .spinner {
+                width: 60px;
+                height: 60px;
+                border: 6px solid #f3f3f3;
+                border-top: 6px solid #3498db;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-bottom: 25px;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            .text {
+                color: #000;
+                font-size: 20px;
+                text-align: center;
+                padding: 0 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="spinner"></div>
+        <div class="text">
+            ${statusText}
+        </div>
+    </body>
+    </html>
+    `;
+
+    // Timeout Logic: Show error if page doesn't load in 10 seconds
+    const targetName = isSearch ? "Google (search)" : cleanUrl;
+
+    // Simplified error HTML generator with typing and emoji switch
+    function getErrorHtml(message, emojiStart = "😢", emojiEnd = "😭") {
+        return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {
+                    margin: 0;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    background-color: #ffffff;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    overflow: hidden;
+                }
+                .emoji-container {
+                    position: relative;
+                    width: 120px;
+                    height: 120px;
+                    margin-bottom: 20px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+                .emoji {
+                    position: absolute;
+                    font-size: 100px;
+                    opacity: 0;
+                    transform: scale(0.5);
+                    transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                }
+                .emoji.active {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+                .emoji.dissolve {
+                    opacity: 0 !important;
+                    transition: opacity 0.4s ease-out !important;
+                }
+                .emoji.appear {
+                    opacity: 1 !important;
+                    transition: opacity 0.4s ease-in !important;
+                }
+                .text {
+                    color: #000;
+                    font-size: 22px;
+                    font-weight: 500;
+                    text-align: center;
+                    padding: 0 40px;
+                    min-height: 1.2em;
+                    line-height: 1.4;
+                }
+                @keyframes shake {
+                    0%, 100% { transform: translateX(0); }
+                    25% { transform: translateX(-8px); }
+                    75% { transform: translateX(8px); }
+                }
+                .shaking {
+                    animation: shake 0.4s ease-in-out;
+                }
+            </style>
+        </head>
+        <body>
+            <div id="emoji-container" class="emoji-container">
+                <div id="emoji1" class="emoji">${emojiStart}</div>
+                <div id="emoji2" class="emoji" style="opacity: 0; transform: scale(1)">${emojiEnd}</div>
+            </div>
+            <div id="text" class="text"></div>
+            <script>
+                const fullText = "${message.replace(/"/g, '\\"').replace(/\n/g, '<br>')}";
+                const textElement = document.getElementById('text');
+                const emoji1 = document.getElementById('emoji1');
+                const emoji2 = document.getElementById('emoji2');
+                const container = document.getElementById('emoji-container');
+
+                setTimeout(() => {
+                    emoji1.classList.add('active');
+                }, 300);
+
+                let i = 0;
+                function typeWriter() {
+                    if (i < fullText.length) {
+                        i++;
+                        textElement.textContent = fullText.substring(0, i);
+
+                        let delay = 25 + Math.random() * 40;
+                        setTimeout(typeWriter, delay);
+                    } else {
+                        // Finished typing
+                        setTimeout(() => {
+                            container.classList.add('shaking');
+                            emoji1.classList.add('dissolve');
+                            emoji2.classList.add('appear');
+                        }, 500);
+                    }
+                }
+                setTimeout(typeWriter, 1000);
+            </script>
+        </body>
+        </html>
+        `;
+    }
+
+    // 3. Create the WebView within the window
+    const webview = window.createWebview({
+        html: loadingHtml,
+        incognito: true, // Ephemeral session (cookies work but aren't saved on exit)
+        autoplay: true,  // Needed for mic/camera/video to start without user interaction
+        clipboard: true, // Allow copy-pasting
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+    });
+
+    if (isHangouts) {
+        console.log('\x1b[33mWarning: Google Hangouts is no longer in service. Redirecting to Google Chat...\x1b[0m');
+    }
+
+    if (isSkype) {
+        console.log('\x1b[33mWarning: Skype is no longer in service. Redirecting to MS Teams...\x1b[0m');
+    }
+
+    let loadingTimedOut = false;
+    let redirectStarted = false;
+    let timeoutTimer;
+
+    // --- Ping Detection Logic ---
+    const startConnection = () => {
+        try {
+            const targetHost = new URL(finalUrl).hostname;
+            // Ping the host to check availability before loading
+            exec(`ping -c 1 -t 3 ${targetHost}`, (error, stdout, stderr) => {
+                if (error) {
+                    if (!redirectStarted && !loadingTimedOut) {
+                        // Double check if it's a general internet failure by pinging a global IP
+                        exec(`ping -c 1 -t 2 8.8.8.8`, (globalError) => {
+                            if (globalError) {
+                                // No response from Google DNS either, likely no internet
+                                loadingTimedOut = true;
+                                if (timeoutTimer) clearTimeout(timeoutTimer);
+                                const msg = `Yo bro, you are currently offline. Do me a favor and check your internet before retrying.`;
+                                webview.loadHtml(getErrorHtml(msg, "📡", "❌"));
+                                console.log("Network unreachable. Showing No Internet error.");
+                            } else {
+                                // Internet is fine, but target host is not, so it's a 404
+                                loadingTimedOut = true;
+                                if (timeoutTimer) clearTimeout(timeoutTimer);
+                                const msg = `${targetName} returned 404. Are you sure this is the right url?`;
+                                webview.loadHtml(getErrorHtml(msg, "🧐", "🚫"));
+                                console.log(`Ping failed for ${targetHost}. Showing 404.`);
+                            }
+                        });
+                    }
+                } else {
+                    if (!loadingTimedOut) {
+                        redirectStarted = true;
+                        webview.loadUrl(finalUrl);
+                    }
+                }
+            });
+        } catch (e) {
+            // Fallback for searches or invalid URL formats
+            redirectStarted = true;
+            webview.loadUrl(finalUrl);
+        }
+    };
+
+    // Give the splash screen a tiny bit of time to show before pinging
+    setTimeout(startConnection, 400);
+
+    timeoutTimer = setTimeout(() => {
+        if (!redirectStarted && !loadingTimedOut) {
+            loadingTimedOut = true;
+            if (isHangouts) {
+                const msg = "hangouts.google.com returned 410. Are you sure this service is still active?";
+                webview.loadHtml(getErrorHtml(msg, "📟", "🪦"));
+            } else {
+                const msg = `${targetName} took too long to respond. Are you sure the service is online?`;
+                webview.loadHtml(getErrorHtml(msg, "🕰️", "⌛"));
+            }
+            console.log(`Connection timeout.`);
+        }
+    }, 10000);
+
+    webview.on('page-load-finished', (payload) => {
+        // Ignore the initial loading splash screen
+        if (payload.url && !payload.url.startsWith('data:') && payload.url !== 'about:blank') {
+            if (!loadingTimedOut) {
+                clearTimeout(timeoutTimer);
+            }
+
+            // If the platform reports success: false, it's a 404 or similar
+            if (payload.success === false && !loadingTimedOut) {
+                const msg = `${targetName} returned 404. Are you sure this is the right url?`;
+                webview.loadHtml(getErrorHtml(msg, "🧐", "🚫"));
+            }
+        }
+    });
+
+    // 4. Handle window close - Quit the application immediately
+    app.on('window-close-requested', () => {
+        console.log('Window closed. Quitting WebNet...');
+        app.exit();
+    });
+
+    console.log(`WebNet launched: ${finalUrl}`);
+});
+
+// Run the application event loop
+app.run();
